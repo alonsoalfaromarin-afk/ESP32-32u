@@ -77,17 +77,10 @@ void colgarLlamada() { Serial2.println("ATH"); delay(200); Serial2.println("AT+C
 
 // ============================================
 // FUNCIÓN MODIFICADA - enviarMensajeTelegram
+// YA TIENE EL SEMÁFORO TOMADO DESDE FUERA
 // ============================================
 void enviarMensajeTelegram(String chat_id, String texto) {
-  // Esperar a que httpEnCurso se libere
-  unsigned long timeout = millis();
-  while (httpEnCurso && (millis() - timeout < 5000)) {
-    delay(50);
-  }
-  
-  httpEnCurso = true;  // Bloquear para evitar interferencia
-  
-  xSemaphoreTake(semaforoModem, portMAX_DELAY);
+  // NO tomar semáforo aquí - ya está tomado desde verificarTelegram o tareaTelegram
   limpiarBufferModem();
   
   Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/sendMessage?chat_id=" + chat_id + "&text=" + texto + "&parse_mode=Markdown\"");
@@ -107,29 +100,23 @@ void enviarMensajeTelegram(String chat_id, String texto) {
   }
   
   limpiarBufferModem();
-  xSemaphoreGive(semaforoModem);
-  
-  httpEnCurso = false;  // LIBERAR después de enviar
   delay(1500);  // Delay de seguridad entre mensajes
 }
 
 // ============================================
 // FUNCIÓN MODIFICADA - verificarTelegram
+// MANTIENE EL SEMÁFORO DURANTE TODO EL PROCESO
 // ============================================
 void verificarTelegram() {
   if (!modemListo) { 
     return; 
   }
   
-  if (httpEnCurso) return;  // Si ya está en uso, no hacer nada
+  // AQUÍ YA TIENE EL SEMÁFORO TOMADO DESDE tareaTelegram
   
-  httpEnCurso = true;
-  static String lastUpdateId = "0";
-  
-  xSemaphoreTake(semaforoModem, portMAX_DELAY);
   limpiarBufferModem();
   
-  Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/getUpdates?offset=" + lastUpdateId + "&limit=1&timeout=0\"");
+  Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/getUpdates?offset=0&limit=1&timeout=0\"");
   delay(300); 
   while (Serial2.available()) Serial2.read();
   
@@ -172,17 +159,12 @@ void verificarTelegram() {
         JsonArray results = doc["result"].as<JsonArray>();
         if (results.size() > 0) {
           for (JsonObject result : results) {
-            lastUpdateId = String(result["update_id"].as<long>() + 1);
             if (!result["message"].containsKey("text")) continue;
             
             String chat_id = result["message"]["chat"]["id"].as<String>();
             String texto = result["message"]["text"].as<String>(); 
             texto.trim();
             Serial.println("📱 " + chat_id + ": " + texto);
-
-            // Liberar semáforo ANTES de salir
-            xSemaphoreGive(semaforoModem);
-            httpEnCurso = false;
 
             if (texto == "/start" || texto == "Hola" || texto == "hola") {
               enviarMensajeTelegram(chat_id, "🚪+*Control+de+Porton*"); 
@@ -271,8 +253,6 @@ void verificarTelegram() {
   }
 
   limpiarBufferModem();
-  xSemaphoreGive(semaforoModem);
-  httpEnCurso = false;  // SIEMPRE liberar al final
 }
 
 void tareaLlamadas(void* parameter) {
@@ -387,8 +367,11 @@ void tareaTelegram(void* parameter) {
       bool a = existeNumero(n); 
       String msg = a ? "🟢+*Porton+abierto*%0A📱+`"+n+"`" : "🔴+*Acceso+denegado*%0A📱+`"+n+"`"; 
       
-      // Usar función que sincroniza correctamente
-      enviarMensajeTelegram("5405162685", msg); 
+      // Tomar semáforo para enviar mensaje de estado
+      if (xSemaphoreTake(semaforoModem, 1000) == pdTRUE) { 
+        enviarMensajeTelegram("5405162685", msg); 
+        xSemaphoreGive(semaforoModem); 
+      }
       
       llamadaPendiente = ""; 
     }
@@ -401,8 +384,10 @@ void tareaTelegram(void* parameter) {
     portEXIT_CRITICAL(&spinlockRelay);
     
     if (modemListo && (millis() - tuc >= INTERVALO_TELEGRAM) && !llamadaEnCurso) { 
-      if (xSemaphoreTake(semaforoModem, 500) == pdTRUE) { 
+      if (xSemaphoreTake(semaforoModem, 1000) == pdTRUE) { 
+        httpEnCurso = true;
         verificarTelegram(); 
+        httpEnCurso = false;
         xSemaphoreGive(semaforoModem); 
         tuc = millis(); 
       } 
