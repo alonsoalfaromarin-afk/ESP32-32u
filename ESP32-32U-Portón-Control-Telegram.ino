@@ -93,11 +93,15 @@ void enviarMensajeTelegram(String chat_id, String texto) {
 void verificarTelegram() {
   if (!modemListo) return;
   
+  Serial.println("🔍 [Debug] Iniciando verificarTelegram");
   static String lastUpdateId = "0";
   limpiarBufferModem();
+  
   Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/getUpdates?offset=" + lastUpdateId + "&limit=1&timeout=0\"");
   delay(300); 
   while (Serial2.available()) Serial2.read();
+  
+  Serial.println("🔍 [Debug] Enviando AT+HTTPACTION=0");
   Serial2.println("AT+HTTPACTION=0"); 
   delay(3000);
   
@@ -107,18 +111,25 @@ void verificarTelegram() {
     while (Serial2.available()) r += (char)Serial2.read(); 
     delay(10); 
   }
+  
+  Serial.println("🔍 [Debug] Respuesta HTTPACTION: " + (r.length() > 0 ? "OK" : "VACÍA"));
 
   if (r.indexOf("200") != -1) {
+    Serial.println("🔍 [Debug] HTTP 200 recibido");
     Serial2.println("AT+HTTPREAD=0,1000"); 
     delay(300);
+    
     String d = ""; 
     ini = millis();
     while (millis() - ini < 1500) { 
       while (Serial2.available()) d += (char)Serial2.read(); 
       delay(10); 
     }
+    
+    Serial.println("🔍 [Debug] HTTPREAD longitud: " + String(d.length()));
 
     if (d.indexOf("\"message\"") != -1) {
+      Serial.println("🔍 [Debug] Mensaje encontrado en respuesta");
       int ij = d.indexOf("{"); 
       String json = d.substring(ij);
       int ll = 0, f = -1; 
@@ -198,8 +209,14 @@ void verificarTelegram() {
           }
         }
       }
+    } else {
+      Serial.println("🔍 [Debug] NO se encontró 'message' en respuesta");
     }
+  } else {
+    Serial.println("🔍 [Debug] NO se recibió HTTP 200");
+    Serial.println("🔍 [Debug] Primera parte respuesta: " + r.substring(0, min(50, (int)r.length())));
   }
+  
   limpiarBufferModem();
 }
 
