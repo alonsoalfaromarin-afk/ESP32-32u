@@ -59,7 +59,7 @@ void cargarAdminsEnRAM() {
 }
 bool esAdmin(String id) { for (int i = 0; i < totalAdminsRAM; i++) { if (adminsRAM[i] == id) return true; } return false; }
 void agregarAdmin(String id) { xSemaphoreTake(semaforoArchivos, portMAX_DELAY); if (!esAdmin(id) && totalAdminsRAM < MAX_ADMINS) { adminsRAM[totalAdminsRAM++] = id; File f = LittleFS.open(ARCHIVO_ADMINS, "a"); if (f) { f.println(id); f.close(); } } xSemaphoreGive(semaforoArchivos); }
-void eliminarAdmin(String id) { xSemaphoreTake(semaforoArchivos, portMAX_DELAY); if (totalAdminsRAM <= 1) { xSemaphoreGive(semaforoArchivos); return; } for (int i = 0; i < totalAdminsRAM; i++) { if (adminsRAM[i] == id) { for (int j = i; j < totalAdminsRAM - 1; j++) adminsRAM[j] = adminsRAM[j + 1]; totalAdminsRAM--; break; } } File f = LittleFS.open(ARCHIVO_NUMEROS, "r"), t = LittleFS.open("/temp.txt", "w"); if (f && t) { while (f.available()) { String l = f.readStringUntil('\n'); l.trim(); if (l != id && l.length() >= 5) t.println(l); } f.close(); t.close(); LittleFS.remove(ARCHIVO_ADMINS); LittleFS.rename("/temp.txt", ARCHIVO_ADMINS); } xSemaphoreGive(semaforoArchivos); }
+void eliminarAdmin(String id) { xSemaphoreTake(semaforoArchivos, portMAX_DELAY); if (totalAdminsRAM <= 1) { xSemaphoreGive(semaforoArchivos); return; } for (int i = 0; i < totalAdminsRAM; i++) { if (adminsRAM[i] == id) { for (int j = i; j < totalAdminsRAM - 1; j++) adminsRAM[j] = adminsRAM[j + 1]; totalAdminsRAM--; break; } } File f = LittleFS.open(ARCHIVO_ADMINS, "r"), t = LittleFS.open("/temp.txt", "w"); if (f && t) { while (f.available()) { String l = f.readStringUntil('\n'); l.trim(); if (l != id && l.length() >= 5) t.println(l); } f.close(); t.close(); LittleFS.remove(ARCHIVO_ADMINS); LittleFS.rename("/temp.txt", ARCHIVO_ADMINS); } xSemaphoreGive(semaforoArchivos); }
 
 void cargarNumerosEnRAM() { xSemaphoreTake(semaforoArchivos, portMAX_DELAY); totalNumerosRAM = 0; File f = LittleFS.open(ARCHIVO_NUMEROS, "r"); if (f) { while (f.available() && totalNumerosRAM < MAX_NUMEROS) { String l = f.readStringUntil('\n'); l.trim(); if (l.length() >= 10) numerosRAM[totalNumerosRAM++] = l; } f.close(); } xSemaphoreGive(semaforoArchivos); }
 bool existeNumero(String n) { String u = ""; for (int i = 0; i < n.length(); i++) { if (isDigit(n.charAt(i))) u += n.charAt(i); } if (u.length() >= 10) u = u.substring(u.length()-10); for (int i = 0; i < totalNumerosRAM; i++) { if (numerosRAM[i] == u) return true; } return false; }
@@ -118,7 +118,6 @@ void enviarMensajeTelegram(String chat_id, String texto) {
 // ============================================
 void verificarTelegram() {
   if (!modemListo) { 
-    httpEnCurso = false; 
     return; 
   }
   
@@ -181,7 +180,7 @@ void verificarTelegram() {
             texto.trim();
             Serial.println("📱 " + chat_id + ": " + texto);
 
-            // Liberar semáforo antes de enviar mensajes
+            // Liberar semáforo ANTES de salir
             xSemaphoreGive(semaforoModem);
             httpEnCurso = false;
 
