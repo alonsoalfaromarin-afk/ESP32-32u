@@ -74,47 +74,30 @@ void inicializarModem() {
 }
 void colgarLlamada() { Serial2.println("ATH"); delay(200); Serial2.println("AT+CHUP"); delay(100); limpiarBufferModem(); llamadaEnCurso = false; digitalWrite(LED_PIN, LOW); }
 
-// ============================================
-// FUNCIÓN - enviarMensajeTelegram
-// El semáforo ya está tomado desde afuera
-// ============================================
 void enviarMensajeTelegram(String chat_id, String texto) {
   limpiarBufferModem();
-  
   Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/sendMessage?chat_id=" + chat_id + "&text=" + texto + "&parse_mode=Markdown\"");
   delay(500);
-  
   Serial2.println("AT+HTTPACTION=0"); 
   delay(4000);
-  
-  // Leer respuesta del modem
   String respuesta = "";
   unsigned long ini = millis();
   while (millis() - ini < 2000) { 
-    while (Serial2.available()) {
-      respuesta += (char)Serial2.read();
-    }
+    while (Serial2.available()) respuesta += (char)Serial2.read();
     delay(10); 
   }
-  
   limpiarBufferModem();
-  delay(1500);  // Delay entre mensajes
+  delay(1500);
 }
 
-// ============================================
-// FUNCIÓN - verificarTelegram
-// ============================================
 void verificarTelegram() {
   if (!modemListo) return;
   
   static String lastUpdateId = "0";
-  
   limpiarBufferModem();
-  
   Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/getUpdates?offset=" + lastUpdateId + "&limit=1&timeout=0\"");
   delay(300); 
   while (Serial2.available()) Serial2.read();
-  
   Serial2.println("AT+HTTPACTION=0"); 
   delay(3000);
   
@@ -128,7 +111,6 @@ void verificarTelegram() {
   if (r.indexOf("200") != -1) {
     Serial2.println("AT+HTTPREAD=0,1000"); 
     delay(300);
-    
     String d = ""; 
     ini = millis();
     while (millis() - ini < 1500) { 
@@ -142,10 +124,7 @@ void verificarTelegram() {
       int ll = 0, f = -1; 
       for (int i = 0; i < json.length(); i++) { 
         if (json[i] == '{') ll++; 
-        else if (json[i] == '}') { 
-          ll--; 
-          if (ll == 0) { f = i; break; } 
-        } 
+        else if (json[i] == '}') { ll--; if (ll == 0) { f = i; break; } } 
       }
       if (f > 0) json = json.substring(0, f + 1);
       
@@ -176,78 +155,51 @@ void verificarTelegram() {
               orden.trim();
               
               if (orden.startsWith("#ADDADMIN:")) { 
-                String id = orden.substring(10); 
-                id.trim(); 
+                String id = orden.substring(10); id.trim(); 
                 agregarAdmin(id); 
                 enviarMensajeTelegram(chat_id, "✅+*Admin+agregado:*+`"+id+"`"); 
               }
               else if (orden.startsWith("#DELADMIN:")) { 
-                String id = orden.substring(10); 
-                id.trim(); 
-                if (id != chat_id) { 
-                  eliminarAdmin(id); 
-                  enviarMensajeTelegram(chat_id, "✅+*Admin+eliminado:*+`"+id+"`"); 
-                } else {
-                  enviarMensajeTelegram(chat_id, "❌+No+puedes+eliminarte"); 
-                }
+                String id = orden.substring(10); id.trim(); 
+                if (id != chat_id) { eliminarAdmin(id); enviarMensajeTelegram(chat_id, "✅+*Admin+eliminado:*+`"+id+"`"); } 
+                else enviarMensajeTelegram(chat_id, "❌+No+puedes+eliminarte"); 
               }
               else if (orden.startsWith("#LISTAADMINS")) { 
                 String l = "👑+*Admins:*%0A"; 
-                for (int i = 0; i < totalAdminsRAM; i++) {
-                  l += String(i+1)+".+`"+adminsRAM[i]+"`%0A"; 
-                }
+                for (int i = 0; i < totalAdminsRAM; i++) l += String(i+1)+".+`"+adminsRAM[i]+"`%0A"; 
                 enviarMensajeTelegram(chat_id, l); 
               }
               else if (orden.startsWith("#ADD:")) { 
                 String n = ""; 
-                for (int k = 5; k < orden.length(); k++) { 
-                  if (isDigit(orden.charAt(k))) n += orden.charAt(k); 
-                } 
-                if (n.length() >= 10) { 
-                  n = n.substring(n.length()-10); 
-                  agregarNumero(n); 
-                  enviarMensajeTelegram(chat_id, "✅+*Agregado*%0A📱+`"+n+"`"); 
-                } 
+                for (int k = 5; k < orden.length(); k++) if (isDigit(orden.charAt(k))) n += orden.charAt(k); 
+                if (n.length() >= 10) { n = n.substring(n.length()-10); agregarNumero(n); enviarMensajeTelegram(chat_id, "✅+*Agregado*%0A📱+`"+n+"`"); } 
               }
               else if (orden.startsWith("#DEL:")) { 
                 String n = ""; 
-                for (int k = 5; k < orden.length(); k++) { 
-                  if (isDigit(orden.charAt(k))) n += orden.charAt(k); 
-                } 
+                for (int k = 5; k < orden.length(); k++) if (isDigit(orden.charAt(k))) n += orden.charAt(k); 
                 if (n.length() >= 10) { 
                   n = n.substring(n.length()-10); 
-                  if (existeNumero(n)) { 
-                    eliminarNumero(n); 
-                    enviarMensajeTelegram(chat_id, "✅+*Eliminado*%0A📱+`"+n+"`"); 
-                  } else {
-                    enviarMensajeTelegram(chat_id, "❌+No+encontrado"); 
-                  }
+                  if (existeNumero(n)) { eliminarNumero(n); enviarMensajeTelegram(chat_id, "✅+*Eliminado*%0A📱+`"+n+"`"); } 
+                  else enviarMensajeTelegram(chat_id, "❌+No+encontrado"); 
                 } 
               }
               else if (orden.startsWith("#LISTA")) { 
-                if (totalNumerosRAM == 0) {
-                  enviarMensajeTelegram(chat_id, "📱+*Sin+usuarios*"); 
-                } else { 
+                if (totalNumerosRAM == 0) enviarMensajeTelegram(chat_id, "📱+*Sin+usuarios*"); 
+                else { 
                   String l = "📱+*Usuarios:*%0A"; 
-                  for (int i = 0; i < totalNumerosRAM; i++) {
-                    l += String(i+1)+".+`"+numerosRAM[i]+"`%0A"; 
-                  }
+                  for (int i = 0; i < totalNumerosRAM; i++) l += String(i+1)+".+`"+numerosRAM[i]+"`%0A"; 
                   l += "✅+Total:+"+String(totalNumerosRAM); 
                   enviarMensajeTelegram(chat_id, l); 
                 } 
               }
             }
-            else if (texto.startsWith(claveMaestra + " ")) { 
-              enviarMensajeTelegram(chat_id, "🔒+No+eres+admin"); 
-            }
-            
+            else if (texto.startsWith(claveMaestra + " ")) enviarMensajeTelegram(chat_id, "🔒+No+eres+admin");
             return;
           }
         }
       }
     }
   }
-
   limpiarBufferModem();
 }
 
@@ -258,8 +210,7 @@ void tareaLlamadas(void* parameter) {
   while (1) {
     static unsigned long hb = 0; 
     if (millis() - hb > 5000) { 
-      Serial.print("💓 [Core 0]"); 
-      Serial.println(); 
+      Serial.println("💓 [Core 0]"); 
       hb = millis(); 
     }
     
@@ -270,16 +221,11 @@ void tareaLlamadas(void* parameter) {
         String n = extraerDato(r, 1); 
         if (n.length() < 10) { 
           String l = ""; 
-          for (int i = 0; i < r.length(); i++) { 
-            if (isDigit(r.charAt(i))) l += r.charAt(i); 
-          } 
+          for (int i = 0; i < r.length(); i++) if (isDigit(r.charAt(i))) l += r.charAt(i); 
           if (l.length() >= 10) n = l.substring(l.length()-10); 
         }
-        
         String u = ""; 
-        for (int i = 0; i < n.length(); i++) { 
-          if (isDigit(n.charAt(i))) u += n.charAt(i); 
-        } 
+        for (int i = 0; i < n.length(); i++) if (isDigit(n.charAt(i))) u += n.charAt(i); 
         if (u.length() >= 10) u = u.substring(u.length()-10);
         
         if (u.length() == 10) { 
@@ -300,10 +246,7 @@ void tareaLlamadas(void* parameter) {
         llamadaEnCurso = false; 
         digitalWrite(LED_PIN, LOW); 
         portENTER_CRITICAL(&spinlockRelay); 
-        if (relayActivo) { 
-          digitalWrite(RELAY_PIN, LOW); 
-          relayActivo = false; 
-        } 
+        if (relayActivo) { digitalWrite(RELAY_PIN, LOW); relayActivo = false; } 
         portEXIT_CRITICAL(&spinlockRelay); 
       }
     }
@@ -313,13 +256,9 @@ void tareaLlamadas(void* parameter) {
       colgarLlamada(); 
       xSemaphoreGive(semaforoModem); 
       portENTER_CRITICAL(&spinlockRelay); 
-      if (relayActivo) { 
-        digitalWrite(RELAY_PIN, LOW); 
-        relayActivo = false; 
-      } 
+      if (relayActivo) { digitalWrite(RELAY_PIN, LOW); relayActivo = false; } 
       portEXIT_CRITICAL(&spinlockRelay); 
     }
-    
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
@@ -327,11 +266,9 @@ void tareaLlamadas(void* parameter) {
 void tareaTelegram(void* parameter) {
   Serial.println("🌐 [Core 1] Iniciando..."); 
   unsigned long tuc = 0;
-  
   xSemaphoreTake(semaforoModem, portMAX_DELAY); 
   inicializarModem(); 
   xSemaphoreGive(semaforoModem);
-  
   sistemaListo = true; 
   xSemaphoreGive(semaforoSistemaListo);
   Serial.println("🌐 [Core 1] Listo\n");
@@ -361,12 +298,9 @@ void tareaTelegram(void* parameter) {
       String n = llamadaPendiente; 
       bool a = existeNumero(n); 
       String msg = a ? "🟢+*Porton+abierto*%0A📱+`"+n+"`" : "🔴+*Acceso+denegado*%0A📱+`"+n+"`"; 
-      
-      if (xSemaphoreTake(semaforoModem, 1000) == pdTRUE) { 
-        enviarMensajeTelegram("5405162685", msg); 
-        xSemaphoreGive(semaforoModem); 
-      }
-      
+      xSemaphoreTake(semaforoModem, portMAX_DELAY); 
+      enviarMensajeTelegram("5405162685", msg); 
+      xSemaphoreGive(semaforoModem); 
       llamadaPendiente = ""; 
     }
     
@@ -377,14 +311,13 @@ void tareaTelegram(void* parameter) {
     } 
     portEXIT_CRITICAL(&spinlockRelay);
     
-    if (modemListo && (millis() - tuc >= INTERVALO_TELEGRAM) && !llamadaEnCurso) { 
-      if (xSemaphoreTake(semaforoModem, 1000) == pdTRUE) { 
+    if (modemListo && (millis() - tuc >= INTERVALO_TELEGRAM)) { 
+      if (xSemaphoreTake(semaforoModem, 500) == pdTRUE) { 
         verificarTelegram(); 
         xSemaphoreGive(semaforoModem); 
         tuc = millis(); 
       } 
     }
-    
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
@@ -408,35 +341,27 @@ void setup() {
   digitalWrite(LED_PIN, HIGH); 
   pinMode(RELAY_PIN, OUTPUT); 
   digitalWrite(RELAY_PIN, LOW);
-  
   Serial.println("\n╔══════════════════════════════════════╗");
   Serial.println("║   CONTROL DE PORTON ELECTRICO       ║");
   Serial.println("║   ESP32-32U + A7608SA-H             ║");
-  Serial.println("╚══════════════════════════════��═══════╝\n");
+  Serial.println("╚══════════════════════════════════════╝\n");
   Serial.println("⏳ Esperando 10s...");
   for (int i = 10; i > 0; i--) { 
     Serial.print("   " + String(i) + "..."); 
     delay(1000); 
   }
   Serial.println("\n✅ Iniciando...\n");
-  
   Serial2.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
   if (!LittleFS.begin(false)) LittleFS.begin(true);
-  
   semaforoModem = xSemaphoreCreateMutex(); 
   semaforoArchivos = xSemaphoreCreateMutex(); 
   semaforoSistemaListo = xSemaphoreCreateBinary();
-  
   cargarAdminsEnRAM(); 
   cargarNumerosEnRAM();
-  
   xTaskCreatePinnedToCore(tareaLlamadas, "C0", 4096, NULL, 3, NULL, 0);
   xTaskCreatePinnedToCore(tareaTelegram, "C1", 8192, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(tareaMantenimiento, "M", 4096, NULL, 1, NULL, 1);
-  
   Serial.println("🚀 Sistema iniciado\n");
 }
 
-void loop() { 
-  vTaskDelete(NULL); 
-}
+void loop() { vTaskDelete(NULL); }
