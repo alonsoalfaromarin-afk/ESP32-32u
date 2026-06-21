@@ -32,7 +32,6 @@ portMUX_TYPE spinlockRelay = portMUX_INITIALIZER_UNLOCKED;
 
 volatile bool relayActivo = false, llamadaEnCurso = false, sistemaListo = false, modemListo = false;
 volatile unsigned long tiempoEncendido = 0, tiempoLlamada = 0;
-volatile bool httpEnCurso = false;
 
 #define MAX_NUMEROS 500
 #define MAX_ADMINS 20
@@ -76,11 +75,10 @@ void inicializarModem() {
 void colgarLlamada() { Serial2.println("ATH"); delay(200); Serial2.println("AT+CHUP"); delay(100); limpiarBufferModem(); llamadaEnCurso = false; digitalWrite(LED_PIN, LOW); }
 
 // ============================================
-// FUNCIÓN MODIFICADA - enviarMensajeTelegram
-// YA TIENE EL SEMÁFORO TOMADO DESDE FUERA
+// FUNCIÓN - enviarMensajeTelegram
+// El semáforo ya está tomado desde afuera
 // ============================================
 void enviarMensajeTelegram(String chat_id, String texto) {
-  // NO tomar semáforo aquí - ya está tomado desde verificarTelegram o tareaTelegram
   limpiarBufferModem();
   
   Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/sendMessage?chat_id=" + chat_id + "&text=" + texto + "&parse_mode=Markdown\"");
@@ -100,23 +98,20 @@ void enviarMensajeTelegram(String chat_id, String texto) {
   }
   
   limpiarBufferModem();
-  delay(1500);  // Delay de seguridad entre mensajes
+  delay(1500);  // Delay entre mensajes
 }
 
 // ============================================
-// FUNCIÓN MODIFICADA - verificarTelegram
-// MANTIENE EL SEMÁFORO DURANTE TODO EL PROCESO
+// FUNCIÓN - verificarTelegram
 // ============================================
 void verificarTelegram() {
-  if (!modemListo) { 
-    return; 
-  }
+  if (!modemListo) return;
   
-  // AQUÍ YA TIENE EL SEMÁFORO TOMADO DESDE tareaTelegram
+  static String lastUpdateId = "0";
   
   limpiarBufferModem();
   
-  Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/getUpdates?offset=0&limit=1&timeout=0\"");
+  Serial2.println("AT+HTTPPARA=\"URL\",\"https://api.telegram.org/bot" + String(botToken) + "/getUpdates?offset=" + lastUpdateId + "&limit=1&timeout=0\"");
   delay(300); 
   while (Serial2.available()) Serial2.read();
   
@@ -159,6 +154,7 @@ void verificarTelegram() {
         JsonArray results = doc["result"].as<JsonArray>();
         if (results.size() > 0) {
           for (JsonObject result : results) {
+            lastUpdateId = String(result["update_id"].as<long>() + 1);
             if (!result["message"].containsKey("text")) continue;
             
             String chat_id = result["message"]["chat"]["id"].as<String>();
@@ -245,7 +241,7 @@ void verificarTelegram() {
               enviarMensajeTelegram(chat_id, "🔒+No+eres+admin"); 
             }
             
-            return;  // Salir después de procesar el mensaje
+            return;
           }
         }
       }
@@ -263,12 +259,11 @@ void tareaLlamadas(void* parameter) {
     static unsigned long hb = 0; 
     if (millis() - hb > 5000) { 
       Serial.print("💓 [Core 0]"); 
-      if (httpEnCurso) Serial.print(" (bloqueado)"); 
       Serial.println(); 
       hb = millis(); 
     }
     
-    if (Serial2.available() && !httpEnCurso) {
+    if (Serial2.available()) {
       String r = Serial2.readString();
       
       if (!llamadaEnCurso && (r.indexOf("+CLIP:") != -1 || r.indexOf("RING") != -1)) {
@@ -367,7 +362,6 @@ void tareaTelegram(void* parameter) {
       bool a = existeNumero(n); 
       String msg = a ? "🟢+*Porton+abierto*%0A📱+`"+n+"`" : "🔴+*Acceso+denegado*%0A📱+`"+n+"`"; 
       
-      // Tomar semáforo para enviar mensaje de estado
       if (xSemaphoreTake(semaforoModem, 1000) == pdTRUE) { 
         enviarMensajeTelegram("5405162685", msg); 
         xSemaphoreGive(semaforoModem); 
@@ -385,9 +379,7 @@ void tareaTelegram(void* parameter) {
     
     if (modemListo && (millis() - tuc >= INTERVALO_TELEGRAM) && !llamadaEnCurso) { 
       if (xSemaphoreTake(semaforoModem, 1000) == pdTRUE) { 
-        httpEnCurso = true;
         verificarTelegram(); 
-        httpEnCurso = false;
         xSemaphoreGive(semaforoModem); 
         tuc = millis(); 
       } 
@@ -420,7 +412,7 @@ void setup() {
   Serial.println("\n╔══════════════════════════════════════╗");
   Serial.println("║   CONTROL DE PORTON ELECTRICO       ║");
   Serial.println("║   ESP32-32U + A7608SA-H             ║");
-  Serial.println("╚══════════════════════════════════════╝\n");
+  Serial.println("╚══════════════════════════════��═══════╝\n");
   Serial.println("⏳ Esperando 10s...");
   for (int i = 10; i > 0; i--) { 
     Serial.print("   " + String(i) + "..."); 
